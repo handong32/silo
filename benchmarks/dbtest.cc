@@ -14,7 +14,7 @@
 #include "../allocator.h"
 #include "../stats_server.h"
 #include "bench.h"
-#include "bdb_wrapper.h"
+//#include "bdb_wrapper.h"
 #include "ndb_wrapper.h"
 #include "ndb_wrapper_impl.h"
 #include "kvdb_wrapper.h"
@@ -60,7 +60,7 @@ main(int argc, char **argv)
 {
   abstract_db *db = NULL;
   void (*test_fn)(abstract_db *, int argc, char **argv) = NULL;
-  string bench_type = "ycsb";
+  string bench_type = "tpcc";
   string db_type = "ndb-proto2";
   char *curdir = get_current_dir_name();
   string basedir = curdir;
@@ -194,7 +194,7 @@ main(int argc, char **argv)
     }
   }
 
-  if (bench_type == "ycsb")
+  /*  if (bench_type == "ycsb")
     test_fn = ycsb_do_test;
   else if (bench_type == "tpcc")
     test_fn = tpcc_do_test;
@@ -205,8 +205,13 @@ main(int argc, char **argv)
   else if (bench_type == "bid")
     test_fn = bid_do_test;
   else
-    ALWAYS_ASSERT(false);
+  ALWAYS_ASSERT(false);*/
 
+  if (bench_type == "tpcc")
+    test_fn = tpcc_do_test;
+  else
+    ALWAYS_ASSERT(false);
+  
   if (do_compress && logfiles.empty()) {
     cerr << "[ERROR] --log-compress specified without logging enabled" << endl;
     return 1;
@@ -276,10 +281,10 @@ main(int argc, char **argv)
 #endif
 
   if (db_type == "bdb") {
-    const string cmd = "rm -rf " + basedir + "/db/*";
+    //const string cmd = "rm -rf " + basedir + "/db/*";
     // XXX(stephentu): laziness
-    int ret UNUSED = system(cmd.c_str());
-    db = new bdb_wrapper("db", bench_type + ".db");
+    /*int ret UNUSED = system(cmd.c_str());
+    db = new bdb_wrapper("db", bench_type + ".db");*/
   } else if (db_type == "ndb-proto1") {
     // XXX: hacky simulation of proto1
     db = new ndb_wrapper<transaction_proto2>(

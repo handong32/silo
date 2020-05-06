@@ -32,7 +32,7 @@ public:
   ndb_thread(const ndb_thread &) = delete;
   ndb_thread(ndb_thread &&) = delete;
   ndb_thread &operator=(const ndb_thread &) = delete;
-
+  
   virtual ~ndb_thread();
 
   inline const std::string &
@@ -41,6 +41,7 @@ public:
     return name_;
   }
 
+  pthread_t get_native_handle();
   void start();
   void join();
   virtual void run();

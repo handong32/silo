@@ -16,6 +16,8 @@
 #include "../scopedperf.hh"
 #include "../allocator.h"
 
+#define NB_EVENTS 4
+
 #ifdef USE_JEMALLOC
 //cannot include this header b/c conflicts with malloc.h
 //#include <jemalloc/jemalloc.h>
@@ -29,11 +31,11 @@ extern "C" int mallctl(const char *name, void *oldp, size_t *oldlenp, void *newp
 using namespace std;
 using namespace util;
 
-size_t nthreads = 1;
+size_t nthreads = 15;
 volatile bool running = true;
 int verbose = 0;
 uint64_t txn_flags = 0;
-double scale_factor = 1.0;
+double scale_factor = 15.0;
 uint64_t runtime = 30;
 uint64_t ops_per_worker = 0;
 int run_mode = RUNMODE_TIME;
@@ -43,6 +45,7 @@ int slow_exit = 0;
 int retry_aborted_transaction = 0;
 int no_reset_counters = 0;
 int backoff_aborted_transaction = 0;
+
 
 template <typename T>
 static void
@@ -106,9 +109,13 @@ static event_avg_counter evt_avg_abort_spins("avg_abort_spins");
 
 void
 bench_worker::run()
-{
+  {
+  
   // XXX(stephentu): so many nasty hacks here. should actually
   // fix some of this stuff one day
+  //printf(" ******** worker_id = %d\n", (int)worker_id);
+    //std::cout << "bench_worker::run() on CPU: " << sched_getcpu() << "\n";
+					    
   if (set_core_id)
     coreid::set_core_id(worker_id); // cringe
   {
@@ -120,7 +127,10 @@ bench_worker::run()
   txn_counts.resize(workload.size());
   barrier_a->count_down();
   barrier_b->wait_for();
-  while (running && (run_mode != RUNMODE_OPS || ntxn_commits < ops_per_worker)) {
+  int mycount = 0;
+  bool myrunning = true;
+  while (myrunning && (run_mode != RUNMODE_OPS || ntxn_commits < ops_per_worker)) {
+    mycount ++;
     double d = r.next_uniform();
     for (size_t i = 0; i < workload.size(); i++) {
       if ((i + 1) == workload.size() || d < workload[i].frequency) {
@@ -163,7 +173,13 @@ bench_worker::run()
       }
       d -= workload[i].frequency;
     }
-  }
+
+    //if (mycount > 2555555) { //2583339
+    if (mycount > 1000000) {
+      myrunning = false;
+    }
+  }  
+
 #ifdef ENABLE_INSTR
   ofstream myfile;
   char buff[100];
@@ -244,23 +260,41 @@ bench_runner::run()
   }
 
   const pair<uint64_t, uint64_t> mem_info_before = get_system_memory_info();
-
+  //nthreads=15;
+  //printf("**** bench_runner::run() nthreads=%d\n", (int)nthreads);
+    
   const vector<bench_worker *> workers = make_workers();
   ALWAYS_ASSERT(!workers.empty());
-  for (vector<bench_worker *>::const_iterator it = workers.begin();
-       it != workers.end(); ++it)
-    (*it)->start();
+  //for (vector<bench_worker *>::const_iterator it = workers.begin();
+  //     it != workers.end(); ++it) {
+  // (*it)->start();
+  for(size_t mycpu=0; mycpu < nthreads; mycpu++) {
+    //std::cout << "mycpu = " << mycpu << "\n";
+    workers[mycpu]->start();
+
+    /*cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(mycpu, &cpuset);
+    int rc = pthread_setaffinity_np(workers[mycpu]->get_native_handle(),
+                                    sizeof(cpu_set_t), &cpuset);
+    if (rc != 0) {
+      std::cout << "Error calling pthread_setaffinity_np: " << rc << "\n";
+      exit(-1);
+      }*/
+  }
 
   barrier_a.wait_for(); // wait for all threads to start up
   timer t, t_nosync;
   barrier_b.count_down(); // bombs away!
-  if (run_mode == RUNMODE_TIME) {
+  
+  /*if (run_mode == RUNMODE_TIME) {
     sleep(runtime);
     running = false;
-  }
+    }*/
   __sync_synchronize();
   for (size_t i = 0; i < nthreads; i++)
     workers[i]->join();
+  std::cout << "join done\n";
   const unsigned long elapsed_nosync = t_nosync.lap();
   db->do_txn_finish(); // waits for all worker txns to persist
   size_t n_commits = 0;
@@ -306,6 +340,29 @@ bench_runner::run()
   const double avg_persist_latency_ms =
     get<2>(persisted_info) / 1000.0;
 
+  /*cerr << "--- benchmark statistics ---" << endl;
+  map<string, size_t> agg_txn_counts = workers[0]->get_txn_counts();
+  cerr << "runtime: " << elapsed_sec << " sec" << endl;
+  //cerr << "memory delta: " << delta_mb  << " MB" << endl;
+  //cerr << "memory delta rate: " << (delta_mb / elapsed_sec)  << " MB/sec" << endl;
+  //cerr << "logical memory delta: " << size_delta_mb << " MB" << endl;
+  // cerr << "logical memory delta rate: " << (size_delta_mb / elapsed_sec) << " MB/sec" << endl;
+  cerr << "agg_nosync_throughput: " << agg_nosync_throughput << " ops/sec" << endl;
+  cerr << "avg_nosync_per_core_throughput: " << avg_nosync_per_core_throughput << " ops/sec/core" << endl;
+  cerr << "agg_throughput: " << agg_throughput << " ops/sec" << endl;
+  cerr << "avg_per_core_throughput: " << avg_per_core_throughput << " ops/sec/core" << endl;
+  cerr << "agg_persist_throughput: " << agg_persist_throughput << " ops/sec" << endl;
+  cerr << "avg_per_core_persist_throughput: " << avg_per_core_persist_throughput << " ops/sec/core" << endl;
+  cerr << "avg_latency: " << avg_latency_ms << " ms" << endl;
+  cerr << "avg_persist_latency: " << avg_persist_latency_ms << " ms" << endl;
+  cerr << "agg_abort_rate: " << agg_abort_rate << " aborts/sec" << endl;
+  cerr << "avg_per_core_abort_rate: " << avg_per_core_abort_rate << " aborts/sec/core" << endl;
+  cerr << "txn breakdown: " << endl;
+  for (auto it = agg_txn_counts.begin(); it != agg_txn_counts.end(); ++it) {
+    cout << it->second << ", ";
+  }
+  cout << "\n";
+  */
   if (verbose) {
     const pair<uint64_t, uint64_t> mem_info_after = get_system_memory_info();
     const int64_t delta = int64_t(mem_info_before.first) - int64_t(mem_info_after.first); // free mem
@@ -360,7 +417,12 @@ bench_runner::run()
     cerr << "agg_abort_rate: " << agg_abort_rate << " aborts/sec" << endl;
     cerr << "avg_per_core_abort_rate: " << avg_per_core_abort_rate << " aborts/sec/core" << endl;
     cerr << "txn breakdown: " << format_list(agg_txn_counts.begin(), agg_txn_counts.end()) << endl;
-    cerr << "--- system counters (for benchmark) ---" << endl;
+    for (auto it = agg_txn_counts.begin(); it != agg_txn_counts.end(); ++it) {
+      cout << it->second << ", ";
+    }
+    cout << "\n";
+    
+    /*    cerr << "--- system counters (for benchmark) ---" << endl;
     for (map<string, counter_data>::iterator it = ctrs.begin();
          it != ctrs.end(); ++it)
       cerr << it->first << ": " << it->second << endl;
@@ -378,11 +440,11 @@ bench_runner::run()
 #endif
 #ifdef USE_TCMALLOC
     HeapProfilerDump("before-exit");
-#endif
+    #endif*/
   }
 
   // output for plotting script
-  cout << agg_throughput << " "
+  cout << "throughput " << agg_throughput << " "
        << agg_persist_throughput << " "
        << avg_latency_ms << " "
        << avg_persist_latency_ms << " "
@@ -407,7 +469,7 @@ bench_runner::run()
 
   delete_pointers(loaders);
   delete_pointers(workers);
-}
+  }
 
 template <typename K, typename V>
 struct map_maxer {

@@ -11,7 +11,7 @@ CHECK_INVARIANTS ?= 0
 # 3 = flow
 USE_MALLOC_MODE ?= 1
 
-MYSQL ?= 1
+MYSQL ?= 0
 MYSQL_SHARE_DIR ?= /x/stephentu/mysql-5.5.29/build/sql/share
 
 # Available modes
@@ -86,7 +86,7 @@ endif
 ifeq ($(DEBUG_S),1)
         CXXFLAGS += -fno-omit-frame-pointer -DDEBUG
 else
-        CXXFLAGS += -Werror -O2 -funroll-loops -fno-omit-frame-pointer
+        CXXFLAGS += -Werror -O4 -funroll-loops -fno-omit-frame-pointer -Wno-unused-variable
 endif
 ifeq ($(CHECK_INVARIANTS_S),1)
 	CXXFLAGS += -DCHECK_INVARIANTS
@@ -140,7 +140,12 @@ SRCFILES = allocator.cc \
 	txn_btree.cc \
 	txn.cc \
 	txn_proto2_impl.cc \
-	varint.cc
+	varint.cc 
+#	mmmpcm/pcm/msr.cpp \
+	mmmpcm/pcm/cpucounters.cpp \
+	mmmpcm/pcm/pci.cpp \
+	mmmpcm/pcm/client_bw.cpp \
+	mmmpcm/pcm/utils.cpp
 
 ifeq ($(MASSTREE_S),1)
 MASSTREE_SRCFILES = masstree/compiler.cc \
@@ -155,9 +160,10 @@ OBJFILES := $(patsubst %.cc, $(O)/%.o, $(SRCFILES))
 MASSTREE_OBJFILES := $(patsubst masstree/%.cc, $(O)/%.o, $(MASSTREE_SRCFILES))
 
 BENCH_CXXFLAGS := $(CXXFLAGS)
-BENCH_LDFLAGS := $(LDFLAGS) -ldb_cxx -lz -lrt -lcrypt -laio -ldl -lssl -lcrypto
+#BENCH_LDFLAGS := $(LDFLAGS) -ldb_cxx -lz -lrt -lcrypt -laio -ldl -lssl -lcrypto
+BENCH_LDFLAGS := $(LDFLAGS) -lz -lrt -lcrypt -laio -ldl -lssl -lcrypto
 
-BENCH_SRCFILES = benchmarks/bdb_wrapper.cc \
+#BENCH_SRCFILES = benchmarks/bdb_wrapper.cc \
 	benchmarks/bench.cc \
 	benchmarks/encstress.cc \
 	benchmarks/bid.cc \
@@ -165,6 +171,9 @@ BENCH_SRCFILES = benchmarks/bdb_wrapper.cc \
 	benchmarks/queue.cc \
 	benchmarks/tpcc.cc \
 	benchmarks/ycsb.cc
+
+BENCH_SRCFILES = benchmarks/tpcc.cc \
+	benchmarks/bench.cc
 
 ifeq ($(MYSQL_S),1)
 BENCH_CXXFLAGS += -DMYSQL_SHARE_DIR=\"$(MYSQL_SHARE_DIR)\"

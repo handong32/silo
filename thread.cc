@@ -29,3 +29,7 @@ ndb_thread::run()
   ALWAYS_ASSERT(body_);
   body_();
 }
+
+pthread_t ndb_thread::get_native_handle() {
+  return thd_.native_handle();
+}

@@ -22,6 +22,16 @@ public:
     : current_tick_(1), last_tick_inclusive_(0)
   {
     std::thread thd(&ticker::tickerloop, this);
+    /*cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    // last core
+    CPU_SET(15, &cpuset);
+    int rc = pthread_setaffinity_np(thd.native_handle(),
+                                    sizeof(cpu_set_t), &cpuset);
+    if (rc != 0) {
+      std::cout << "Error calling pthread_setaffinity_np: " << rc << "\n";
+      exit(-1);
+      }*/
     thd.detach();
   }
 
@@ -183,11 +193,13 @@ private:
     // allow the ticker to run anywhere
     cpu_set_t mask;
     CPU_ZERO(&mask);
-    for (int i=0;i<CPU_SETSIZE;i++)
-      CPU_SET(i,&mask);
+    //    for (int i=0;i<CPU_SETSIZE;i++)
+    //CPU_SET(i,&mask);
+    CPU_SET(15,&mask);
     int ret = sched_setaffinity(0, sizeof(mask), &mask);
     ALWAYS_ASSERT(!ret);
-
+    std::cout << "***** tickerloop() running on CPU: " << sched_getcpu() << "\n";
+    
     // runs as daemon
     util::timer loop_timer;
     struct timespec t;
