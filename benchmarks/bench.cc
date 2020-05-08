@@ -9,12 +9,18 @@
 #include <sched.h>
 #include <unistd.h>
 #include <sys/sysinfo.h>
+#include <mutex>          // std::mutex
+
+std::mutex mtx;           // mutex for critical section
 
 #include "bench.h"
 
 #include "../counter.h"
 #include "../scopedperf.hh"
 #include "../allocator.h"
+
+#include "../pcm_lite/Perf.h"
+#include "../pcm_lite/Rapl.h"
 
 #define NB_EVENTS 4
 
@@ -34,6 +40,7 @@ using namespace util;
 size_t nthreads = 15;
 volatile bool running = true;
 int verbose = 0;
+int pmu = 0;
 uint64_t txn_flags = 0;
 double scale_factor = 15.0;
 uint64_t runtime = 30;
@@ -107,15 +114,45 @@ write_cb(void *p, const char *s)
 
 static event_avg_counter evt_avg_abort_spins("avg_abort_spins");
 
-void
-bench_worker::run()
-  {
-  
+void bench_worker::run()
+{  
   // XXX(stephentu): so many nasty hacks here. should actually
   // fix some of this stuff one day
   //printf(" ******** worker_id = %d\n", (int)worker_id);
     //std::cout << "bench_worker::run() on CPU: " << sched_getcpu() << "\n";
-					    
+  size_t mcore;
+  rapl::RaplCounter rp;
+  perf::PerfCounter nins;
+  perf::PerfCounter ncyc;
+  perf::PerfCounter nllcm;
+  perf::PerfCounter nllcr;
+  
+  ninstructions = 0;
+  ncycles = 0;
+  nllc_miss = 0;
+  nllc_ref = 0;
+  joules = 0.0;
+  mcore = sched_getcpu();
+  
+  mtx.lock();
+  if(pmu) {    
+    nins = perf::PerfCounter(perf::PerfEvent::fixed_instructions);
+    ncyc = perf::PerfCounter(perf::PerfEvent::fixed_cycles);
+    nllcm = perf::PerfCounter(perf::PerfEvent::llc_misses);
+    nllcr = perf::PerfCounter(perf::PerfEvent::llc_references);
+    
+    if(mcore == 0 || mcore == 1) {
+      rp = rapl::RaplCounter();
+      rp.Start();
+    }
+    
+    nins.Start();
+    ncyc.Start();
+    nllcm.Start();
+    nllcr.Start();
+  }
+  mtx.unlock();
+  
   if (set_core_id)
     coreid::set_core_id(worker_id); // cringe
   {
@@ -135,51 +172,77 @@ bench_worker::run()
     for (size_t i = 0; i < workload.size(); i++) {
       if ((i + 1) == workload.size() || d < workload[i].frequency) {
       retry:
-        timer t;
-        const unsigned long old_seed = r.get_seed();
-        const auto ret = workload[i].fn(this);
-        if (likely(ret.first)) {
-          ++ntxn_commits;
-          double duration = t.lap();
-          latency_numer_us += duration;
+	timer t;
+	const unsigned long old_seed = r.get_seed();
+	const auto ret = workload[i].fn(this);
+	if (likely(ret.first)) {
+	  ++ntxn_commits;
+	  double duration = t.lap();
+	  latency_numer_us += duration;
 #ifdef ENABLE_INSTR
-          latencies.push_back(duration);
-          txn_type.push_back(i);
+	  latencies.push_back(duration);
+	  txn_type.push_back(i);
 #endif
-          backoff_shifts >>= 1;
-        } else {
-          ++ntxn_aborts;
-          if (retry_aborted_transaction && running) {
-            if (backoff_aborted_transaction) {
-              if (backoff_shifts < 63)
-                backoff_shifts++;
-              uint64_t spins = 1UL << backoff_shifts;
-              spins *= 100; // XXX: tuned pretty arbitrarily
-              evt_avg_abort_spins.offer(spins);
-              while (spins) {
-                nop_pause();
-                spins--;
-              }
-            }
-            r.set_seed(old_seed);
-            goto retry;
-          }
-        }
-        size_delta += ret.second; // should be zero on abort
-        txn_counts[i]++; // txn_counts aren't used to compute throughput (is
-                         // just an informative number to print to the console
-                         // in verbose mode)
-        break;
+	  backoff_shifts >>= 1;
+	} else {
+	  ++ntxn_aborts;
+	  if (retry_aborted_transaction && running) {
+	    if (backoff_aborted_transaction) {
+	      if (backoff_shifts < 63)
+		backoff_shifts++;
+	      uint64_t spins = 1UL << backoff_shifts;
+	      spins *= 100; // XXX: tuned pretty arbitrarily
+	      evt_avg_abort_spins.offer(spins);
+	      while (spins) {
+		nop_pause();
+		spins--;
+	      }
+	    }
+	    r.set_seed(old_seed);
+	    goto retry;
+	  }
+	}
+	size_delta += ret.second; // should be zero on abort
+	txn_counts[i]++; // txn_counts aren't used to compute throughput (is
+	// just an informative number to print to the console
+	// in verbose mode)
+	break;
       }
       d -= workload[i].frequency;
     }
-
+      
     //if (mycount > 2555555) { //2583339
     if (mycount > 1000000) {
       myrunning = false;
     }
   }  
 
+  mtx.lock();
+
+  if(pmu) {
+    nins.Stop();
+    ncyc.Stop();
+    nllcm.Stop();
+    nllcr.Stop();
+    
+    if(mcore == 0 || mcore == 1) {    
+      rp.Stop();
+      joules = rp.Read();
+      rp.Clear();
+    }
+    ninstructions = nins.Read();
+    ncycles = ncyc.Read();
+    nllc_ref = nllcr.Read();
+    nllc_miss = nllcm.Read();
+      
+    nins.Clear();
+    ncyc.Clear();
+    nllcm.Clear();
+    nllcr.Clear();
+    //printf("core:%lu ins: %lu joules:%.2lf\n", mcore, ninstructions, joules);
+  }
+  mtx.unlock();
+    
 #ifdef ENABLE_INSTR
   ofstream myfile;
   char buff[100];
@@ -195,6 +258,7 @@ bench_worker::run()
   myfile.close();
 #endif
 }
+
 
 void
 bench_runner::run()
@@ -261,7 +325,7 @@ bench_runner::run()
 
   const pair<uint64_t, uint64_t> mem_info_before = get_system_memory_info();
   //nthreads=15;
-  //printf("**** bench_runner::run() nthreads=%d\n", (int)nthreads);
+  printf("**** bench_runner::run() nthreads=%d\n", (int)nthreads);
     
   const vector<bench_worker *> workers = make_workers();
   ALWAYS_ASSERT(!workers.empty());
@@ -272,7 +336,7 @@ bench_runner::run()
     //std::cout << "mycpu = " << mycpu << "\n";
     workers[mycpu]->start();
 
-    /*cpu_set_t cpuset;
+    cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(mycpu, &cpuset);
     int rc = pthread_setaffinity_np(workers[mycpu]->get_native_handle(),
@@ -280,7 +344,7 @@ bench_runner::run()
     if (rc != 0) {
       std::cout << "Error calling pthread_setaffinity_np: " << rc << "\n";
       exit(-1);
-      }*/
+    }
   }
 
   barrier_a.wait_for(); // wait for all threads to start up
@@ -294,16 +358,29 @@ bench_runner::run()
   __sync_synchronize();
   for (size_t i = 0; i < nthreads; i++)
     workers[i]->join();
-  std::cout << "join done\n";
+  //std::cout << "join done\n";
   const unsigned long elapsed_nosync = t_nosync.lap();
   db->do_txn_finish(); // waits for all worker txns to persist
   size_t n_commits = 0;
   size_t n_aborts = 0;
   uint64_t latency_numer_us = 0;
+  uint64_t ninstructions = 0;
+  uint64_t ncycles = 0;
+  uint64_t nllc_ref = 0;
+  uint64_t nllc_miss = 0;
+  
+  double joules = 0.0;
+  
   for (size_t i = 0; i < nthreads; i++) {
     n_commits += workers[i]->get_ntxn_commits();
     n_aborts += workers[i]->get_ntxn_aborts();
     latency_numer_us += workers[i]->get_latency_numer_us();
+    ninstructions += workers[i]->get_instructions();
+    ncycles += workers[i]->get_cycles();
+    nllc_ref += workers[i]->get_llc_ref();
+    nllc_miss += workers[i]->get_llc_miss();
+    
+    joules += workers[i]->get_joules();
   }
   const auto persisted_info = db->get_ntxn_persisted();
 
@@ -363,6 +440,12 @@ bench_runner::run()
   }
   cout << "\n";
   */
+  map<string, size_t> agg_txn_counts = workers[0]->get_txn_counts();
+  ssize_t size_delta = workers[0]->get_size_delta();
+  for (size_t i = 1; i < workers.size(); i++) {
+    map_agg(agg_txn_counts, workers[i]->get_txn_counts());
+    size_delta += workers[i]->get_size_delta();
+  }
   if (verbose) {
     const pair<uint64_t, uint64_t> mem_info_after = get_system_memory_info();
     const int64_t delta = int64_t(mem_info_before.first) - int64_t(mem_info_after.first); // free mem
@@ -420,7 +503,7 @@ bench_runner::run()
     for (auto it = agg_txn_counts.begin(); it != agg_txn_counts.end(); ++it) {
       cout << it->second << ", ";
     }
-    cout << "\n";
+    cout << "\n";    
     
     /*    cerr << "--- system counters (for benchmark) ---" << endl;
     for (map<string, counter_data>::iterator it = ctrs.begin();
@@ -442,9 +525,23 @@ bench_runner::run()
     HeapProfilerDump("before-exit");
     #endif*/
   }
+  cout << "txn breakdown: " << format_list(agg_txn_counts.begin(), agg_txn_counts.end()) << endl;
+  for (auto it = agg_txn_counts.begin(); it != agg_txn_counts.end(); ++it) {
+    cout << it->second << ", ";
+  }
+  cout << "\n";
 
+  if(pmu) {
+    cout << "Instructions: " << ninstructions << endl;
+    cout << "Cycles: " << ncycles << endl;
+    cout << "LLC_miss: " <<  nllc_miss << endl;
+    cout << "LLC_ref: " <<  nllc_ref << endl;
+    cout << "Joules: " << joules << endl;
+  }
+  cout << "runtime(sec): " << elapsed_sec << endl;
+  
   // output for plotting script
-  cout << "throughput " << agg_throughput << " "
+  cout << "Throughput " << agg_throughput << " "
        << agg_persist_throughput << " "
        << avg_latency_ms << " "
        << avg_persist_latency_ms << " "

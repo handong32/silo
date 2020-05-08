@@ -76,7 +76,7 @@ else
 	$(error invalid mode)
 endif
 
-CXXFLAGS := -g -Wall -std=c++0x -Wno-maybe-uninitialized
+CXXFLAGS := -g -Wall -std=c++0x -Wno-maybe-uninitialized -static
 CXXFLAGS += -MD -Ithird-party/lz4 -DCONFIG_H=\"$(CONFIG_H)\"
 
 ifeq ($(INSTR),1)
@@ -140,7 +140,11 @@ SRCFILES = allocator.cc \
 	txn_btree.cc \
 	txn.cc \
 	txn_proto2_impl.cc \
-	varint.cc 
+	varint.cc \
+	pcm_lite/Cpuid.cc \
+	pcm_lite/Msr.cc \
+	pcm_lite/Perf.cc \
+	pcm_lite/Rapl.cc 
 #	mmmpcm/pcm/msr.cpp \
 	mmmpcm/pcm/cpucounters.cpp \
 	mmmpcm/pcm/pci.cpp \

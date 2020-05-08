@@ -79,6 +79,7 @@ main(int argc, char **argv)
   while (1) {
     static struct option long_options[] =
     {
+      {"pmu"                        , no_argument       , &pmu                       , 1}   ,
       {"verbose"                    , no_argument       , &verbose                   , 1}   ,
       {"parallel-loading"           , no_argument       , &enable_parallel_loading   , 1}   ,
       {"pin-cpus"                   , no_argument       , &pin_cpus                  , 1}   ,

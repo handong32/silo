@@ -30,6 +30,7 @@ enum {
 extern size_t nthreads;
 extern volatile bool running;
 extern int verbose;
+extern int pmu;
 extern uint64_t txn_flags;
 extern double scale_factor;
 extern uint64_t runtime;
@@ -151,7 +152,12 @@ public:
 
   inline size_t get_ntxn_commits() const { return ntxn_commits; }
   inline size_t get_ntxn_aborts() const { return ntxn_aborts; }
-
+  inline uint64_t get_instructions() { return ninstructions; }
+  inline uint64_t get_cycles() { return ncycles; }
+  inline uint64_t get_llc_ref() { return nllc_ref; }
+  inline uint64_t get_llc_miss() { return nllc_miss; }
+  inline double get_joules() { return joules; }
+  
   inline uint64_t get_latency_numer_us() const { return latency_numer_us; }
 
   inline double
@@ -194,6 +200,11 @@ private:
   size_t ntxn_aborts;
   uint64_t latency_numer_us;
   unsigned backoff_shifts;
+  uint64_t ninstructions;
+  uint64_t ncycles;
+  uint64_t nllc_ref;
+  uint64_t nllc_miss;
+  double joules;
 
 protected:
 
