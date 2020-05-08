@@ -531,14 +531,18 @@ bench_runner::run()
   }
   cout << "\n";
 
+  cout << "Total commits: " << n_commits << endl;
+  cout << "runtime(sec): " << elapsed_sec << endl;
+  
   if(pmu) {
+    cout << "Req/J: " << double(n_commits)/joules << endl;
     cout << "Instructions: " << ninstructions << endl;
     cout << "Cycles: " << ncycles << endl;
     cout << "LLC_miss: " <<  nllc_miss << endl;
     cout << "LLC_ref: " <<  nllc_ref << endl;
     cout << "Joules: " << joules << endl;
   }
-  cout << "runtime(sec): " << elapsed_sec << endl;
+  
   
   // output for plotting script
   cout << "Throughput " << agg_throughput << " "
