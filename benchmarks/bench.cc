@@ -164,10 +164,7 @@ void bench_worker::run()
   txn_counts.resize(workload.size());
   barrier_a->count_down();
   barrier_b->wait_for();
-  int mycount = 0;
-  bool myrunning = true;
-  while (myrunning && (run_mode != RUNMODE_OPS || ntxn_commits < ops_per_worker)) {
-    mycount ++;
+  while (running && (run_mode != RUNMODE_OPS || ntxn_commits < ops_per_worker)) {    
     double d = r.next_uniform();
     for (size_t i = 0; i < workload.size(); i++) {
       if ((i + 1) == workload.size() || d < workload[i].frequency) {
@@ -209,11 +206,6 @@ void bench_worker::run()
 	break;
       }
       d -= workload[i].frequency;
-    }
-      
-    //if (mycount > 2555555) { //2583339
-    if (mycount > 1000000) {
-      myrunning = false;
     }
   }  
 
@@ -351,10 +343,10 @@ bench_runner::run()
   timer t, t_nosync;
   barrier_b.count_down(); // bombs away!
   
-  /*if (run_mode == RUNMODE_TIME) {
+  if (run_mode == RUNMODE_TIME) {
     sleep(runtime);
     running = false;
-    }*/
+  }
   __sync_synchronize();
   for (size_t i = 0; i < nthreads; i++)
     workers[i]->join();
@@ -535,7 +527,7 @@ bench_runner::run()
   cout << "runtime(sec): " << elapsed_sec << endl;
   
   if(pmu) {
-    cout << "Req/J: " << double(n_commits)/joules << endl;
+    cout << "Commits/J: " << double(n_commits)/joules << endl;
     cout << "Instructions: " << ninstructions << endl;
     cout << "Cycles: " << ncycles << endl;
     cout << "LLC_miss: " <<  nllc_miss << endl;
