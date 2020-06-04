@@ -521,27 +521,43 @@ bench_runner::run()
   for (auto it = agg_txn_counts.begin(); it != agg_txn_counts.end(); ++it) {
     cout << it->second << ", ";
   }
-  cout << "\n";
-
-  cout << "Total commits: " << n_commits << endl;
-  cout << "runtime(sec): " << elapsed_sec << endl;
+  cout << "\n";      
+  
+  //cout << "Total commits: " << n_commits << endl;
+  //cout << "runtime(sec): " << elapsed_sec << endl;
   
   if(pmu) {
-    cout << "Commits/J: " << double(n_commits)/joules << endl;
+    cout << "+++COMMITS ELAPSED_SEC INSTRUCTIONS CYCLES LLC_MISS LLC_REF JOULES agg_tput agg_persist_tput avg_latency_ms avg_persist_latency_ms agg_abort_rate" << endl;
+    // output for plotting script 2
+    cout << "+++" << n_commits << " "
+	 << elapsed_sec << " "
+	 << ninstructions << " "
+	 << ncycles << " "
+	 << nllc_miss << " "
+	 << nllc_ref << " "
+	 << joules << " ";
+    
+    cout << agg_throughput << " "
+	 << agg_persist_throughput << " "
+	 << avg_latency_ms << " "
+	 << avg_persist_latency_ms << " "
+	 << agg_abort_rate << "\n";
+    
+    /*cout << "Commits/J: " << double(n_commits)/joules << endl;
     cout << "Instructions: " << ninstructions << endl;
     cout << "Cycles: " << ncycles << endl;
     cout << "LLC_miss: " <<  nllc_miss << endl;
     cout << "LLC_ref: " <<  nllc_ref << endl;
-    cout << "Joules: " << joules << endl;
+    cout << "Joules: " << joules << endl;*/
   }
   
   
   // output for plotting script
-  cout << "Throughput " << agg_throughput << " "
-       << agg_persist_throughput << " "
-       << avg_latency_ms << " "
-       << avg_persist_latency_ms << " "
-       << agg_abort_rate << endl;
+  //cout << "Throughput " << agg_throughput << " "
+     //     << agg_persist_throughput << " "
+  //   << avg_latency_ms << " "
+  //   << avg_persist_latency_ms << " "
+  //   << agg_abort_rate << endl;
   cout.flush();
 
   if (!slow_exit)
