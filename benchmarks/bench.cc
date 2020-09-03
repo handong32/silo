@@ -162,9 +162,12 @@ void bench_worker::run()
   scoped_db_thread_ctx ctx(db, false);
   const workload_desc_vec workload = get_workload();
   txn_counts.resize(workload.size());
+  bool myrunning = true;
   barrier_a->count_down();
   barrier_b->wait_for();
-  while (running && (run_mode != RUNMODE_OPS || ntxn_commits < ops_per_worker)) {    
+  int mycount = 0;
+  while (myrunning && (run_mode != RUNMODE_OPS || ntxn_commits < ops_per_worker)) {    
+    mycount ++;
     double d = r.next_uniform();
     for (size_t i = 0; i < workload.size(); i++) {
       if ((i + 1) == workload.size() || d < workload[i].frequency) {
@@ -206,6 +209,10 @@ void bench_worker::run()
 	break;
       }
       d -= workload[i].frequency;
+    }
+
+    if(mycount > 1000000) {
+      myrunning = false;
     }
   }  
 
@@ -324,6 +331,7 @@ bench_runner::run()
   //for (vector<bench_worker *>::const_iterator it = workers.begin();
   //     it != workers.end(); ++it) {
   // (*it)->start();
+  
   for(size_t mycpu=0; mycpu < nthreads; mycpu++) {
     //std::cout << "mycpu = " << mycpu << "\n";
     workers[mycpu]->start();
@@ -343,10 +351,10 @@ bench_runner::run()
   timer t, t_nosync;
   barrier_b.count_down(); // bombs away!
   
-  if (run_mode == RUNMODE_TIME) {
+  /*if (run_mode == RUNMODE_TIME) {
     sleep(runtime);
     running = false;
-  }
+    }*/
   __sync_synchronize();
   for (size_t i = 0; i < nthreads; i++)
     workers[i]->join();
